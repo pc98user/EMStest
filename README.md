@@ -4,4 +4,4 @@
 EMSメモリをいくつかのビットパターンで読み書きテストします。
 
 ## コンパイル方法
-$ ia16-elf-gcc EMSTEST.c -li86
+$ ia16-elf-gcc emstest.c emslib.c -li86
