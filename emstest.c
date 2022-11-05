@@ -3,6 +3,7 @@
  *
  *  Created on: 2022/10/26
  *      Author: pc98user
+ *              pc98user@mydomain.mydns.jp
  */
 
 #include <stdio.h>
@@ -14,6 +15,32 @@
 
 
 #include "emslib.h"
+
+void __far* memcpy_far(void __far *dest, const void __far *src, size_t n);
+int test();
+int page_select();
+int mode_select();
+int pattern_select();
+int frame_select();
+
+typedef enum {
+    SIMPLE_COPY = 0,
+    FUNCTION_COPY,
+    MODE_NUM
+} TEST_MODE;
+
+#define FRAME_NUM 4
+#define PAGE_SIZE 0x4000
+
+
+EMEM pmem;
+TEST_MODE copy_mode;
+int testing_pattern;
+int testing_frame;
+int testing_page;
+
+char buf_s[PAGE_SIZE];
+char buf_d[PAGE_SIZE];
 
 
 void __far* memcpy_far(void __far *dest, const void __far *src, size_t n)
@@ -27,39 +54,33 @@ void __far* memcpy_far(void __far *dest, const void __far *src, size_t n)
     return dest;
 }
 
-char buf_s[0x4000];
-char buf_d[0x4000];
-
-EMEM pmem;
-int copy_mode;
-int testing_pattern;
-int testing_bank;
-int testing_page;
-
 int test()
 {
     char __far *buf_e;
     int ret;
 
-    printf("bank=%d, pattern=%d, mode=%d, page=%d\n", testing_bank, testing_pattern, copy_mode, testing_page);
+    printf("frame=%d, pattern=%d, mode=%d, page=%d\n", testing_frame, testing_pattern, copy_mode, testing_page);
     fflush(stdout);
 
-    buf_e = EMSmap(&pmem, testing_bank, testing_page);
+    buf_e = EMSmap(&pmem, testing_frame, testing_page);
     if (buf_e == NULL) {
         return 1;
     }
 
-    memset(buf_d, 0x00, 0x4000);
-    if (copy_mode == 0) {
-        memcpy_far(buf_e, (void __far*) buf_s, 0x4000);
-        memcpy_far((void __far*) buf_d, buf_e, 0x4000);
+    memset(buf_d, 0x00, PAGE_SIZE);
+    if (copy_mode == SIMPLE_COPY) {
+        memcpy_far(buf_e, (void __far*) buf_s, PAGE_SIZE);
+        memcpy_far((void __far*) buf_d, buf_e, PAGE_SIZE);
+    }
+    else if (copy_mode == FUNCTION_COPY) {
+        EMSMoveMemRegion(&pmem, EMSPUT, testing_page, buf_s, 0, PAGE_SIZE);
+        EMSMoveMemRegion(&pmem, EMSGET, testing_page, buf_d, 0, PAGE_SIZE);
     }
     else {
-        EMSMoveMemRegion(&pmem, EMSPUT, testing_page, buf_s, 0, 0x4000);
-        EMSMoveMemRegion(&pmem, EMSGET, testing_page, buf_d, 0, 0x4000);
+        return 0;
     }
 
-    ret = memcmp(buf_s, buf_d, 0x4000);
+    ret = memcmp(buf_s, buf_d, PAGE_SIZE);
     if (ret != 0) {
         printf("compare error.\n");
     }
@@ -67,12 +88,12 @@ int test()
 //      printf("compare OK.\n");
     }
 
-    EMSmap(&pmem, testing_bank, 0xffff);
+    EMSmap(&pmem, testing_frame, 0xffff);
 
     return 0;
 }
 
-int page()
+int page_select()
 {
     int page;
     int ret;
@@ -88,14 +109,14 @@ int page()
     return 0;
 }
 
-int mode()
+int mode_select()
 {
-    int mode;
+    TEST_MODE mode;
     int ret;
 
-    for (mode = 0; mode < 2; mode++) {
+    for (mode = 0; mode < MODE_NUM; mode++) {
         copy_mode = mode;
-        ret = page();
+        ret = page_select();
         if (ret != 0) {
             return -1;
         }
@@ -104,7 +125,7 @@ int mode()
     return 0;
 }
 
-int pattern()
+int pattern_select()
 {
     int pattern;
     int i;
@@ -113,26 +134,26 @@ int pattern()
     for (pattern = 0; pattern < 5; pattern++) {
         switch (pattern) {
         case 1:
-            memset(buf_s, 0x00, 0x4000);
+            memset(buf_s, 0x00, PAGE_SIZE);
             break;
         case 2:
-            memset(buf_s, 0xFF, 0x4000);
+            memset(buf_s, 0xFF, PAGE_SIZE);
             break;
         case 3:
-            memset(buf_s, 0x55, 0x4000);
+            memset(buf_s, 0x55, PAGE_SIZE);
             break;
         case 4:
-            memset(buf_s, 0xAA, 0x4000);
+            memset(buf_s, 0xAA, PAGE_SIZE);
             break;
         case 0:
-            for (i = 0; i < 0x4000; i++) {
+            for (i = 0; i < PAGE_SIZE; i++) {
                 buf_s[i] = (char)i;
             }
             break;
         }
 
         testing_pattern = pattern;
-        ret = mode();
+        ret = mode_select();
         if (ret != 0) {
             return -1;
         }
@@ -141,14 +162,14 @@ int pattern()
     return 0;
 }
 
-int bank()
+int frame_select()
 {
-    int bank;
+    int frame;
     int ret;
 
-    for (bank = 2; bank < 4; bank++) {
-        testing_bank = bank;
-        ret = pattern();
+    for (frame = 0; frame < FRAME_NUM; frame++) {
+        testing_frame = frame;
+        ret = pattern_select();
         if (ret != 0) {
             return -1;
         }
@@ -172,7 +193,7 @@ int main(void)
         return 1;
     }
 
-    bank();
+    frame_select();
 
     EMSfree(&pmem);
 
